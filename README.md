@@ -4,6 +4,18 @@ Migrates every user table (schema + data) from a Microsoft Access database
 (`.mdb` / `.accdb`) into a PostgreSQL database, table by table, streamed in
 batches.
 
+Two ways to run it:
+
+- **CLI**: `migrate_access_to_postgres.R`, driven by command-line flags (see
+  [Usage](#usage) below).
+- **Web UI**: `app.R`, a [Shiny](https://shiny.posit.co/) app that prompts
+  for the Access file via a browser file-selection dialog and for the
+  PostgreSQL connection details via a form (see
+  [Web UI (Shiny app)](#web-ui-shiny-app)).
+
+Both share the same underlying migration logic in
+`migrate_access_to_postgres.R`.
+
 ## What it does
 
 1. Connects to the Access file over ODBC.
@@ -27,6 +39,12 @@ batches.
 
 ```r
 install.packages(c("DBI", "odbc", "RPostgres", "optparse", "glue", "cli"))
+```
+
+To use the web UI (`app.R`) as well, also install `shiny`:
+
+```r
+install.packages("shiny")
 ```
 
 ### ODBC driver for Access
@@ -130,6 +148,54 @@ expected tables and row counts:
 ```bash
 Rscript migrate_access_to_postgres.R --mdb /path/to/database.accdb --dry-run
 ```
+
+## Web UI (Shiny app)
+
+`app.R` provides a browser-based form for the same migration, for anyone who
+doesn't want to use the command line. It reuses `run_migration()` and
+`validate_migration_args()` from `migrate_access_to_postgres.R` (sourced by
+`app.R`), so behavior matches the CLI script exactly.
+
+Start it from this directory:
+
+```bash
+Rscript -e "shiny::runApp('.', launch.browser = TRUE)"
+```
+
+or, from an R session with this directory as the working directory:
+
+```r
+shiny::runApp()
+```
+
+This opens a page with:
+
+- A **file input** that opens the browser's native file-selection dialog to
+  pick the `.mdb`/`.accdb` file (instead of typing a `--mdb` path).
+- Fields for the PostgreSQL **host, port, database, user, password, and
+  schema** (equivalent to `--pg-host`/`--pg-port`/`--pg-db`/`--pg-user`/
+  `--pg-password`/`--pg-schema`).
+- The same options as the CLI: dry run, overwrite, batch size, table
+  include/exclude filters, and an ODBC driver override.
+- A **Run migration** button that shows a progress indicator while it runs,
+  then a summary table (per-table status and row counts) and a full log of
+  what happened.
+
+Notes:
+
+- The app must run on a machine that has the ODBC driver set up (see
+  [ODBC driver for Access](#odbc-driver-for-access) above) and network
+  access to the target PostgreSQL server — the same requirements as the CLI
+  script.
+- Selecting a file uploads a copy of it to the machine running the Shiny
+  app (this is how browser file inputs work). For local use — running
+  `app.R` on your own machine and opening it in your own browser — this is
+  effectively instant since no network is involved. If you deploy `app.R`
+  to a remote Shiny server, be aware the whole Access file is transferred
+  over that connection first.
+- The password field is masked in the UI but is otherwise handled the same
+  way as `--pg-password`/`PGPASSWORD` (sent to `RPostgres::Postgres()`,
+  never written to disk by the app itself).
 
 ## Identifier naming
 

@@ -92,21 +92,30 @@ option_list <- list(
   make_option("--odbc-driver", type = "character", default = NULL, help = "Override the ODBC driver name (default: auto-detect by OS)")
 )
 
+# Validates an args list with the same shape as parse_args() returns
+# (used both by the CLI entry point and by the Shiny web UI in app.R).
+validate_migration_args <- function(args) {
+  if (is.null(args$mdb) || !nzchar(args$mdb)) {
+    cli_abort("--mdb is required")
+  }
+  if (!file.exists(args$mdb)) {
+    cli_abort("Access file not found: {args$mdb}")
+  }
+  if (!isTRUE(args$`dry-run`)) {
+    if (is.null(args$`pg-db`) || !nzchar(args$`pg-db`))     cli_abort("--pg-db is required (or set PGDATABASE)")
+    if (is.null(args$`pg-user`) || !nzchar(args$`pg-user`)) cli_abort("--pg-user is required (or set PGUSER)")
+  }
+  invisible(args)
+}
+
 parse_args_safely <- function() {
   parser <- OptionParser(option_list = option_list)
   args <- parse_args(parser)
 
   if (is.null(args$mdb) || !nzchar(args$mdb)) {
     print_help(parser)
-    cli_abort("--mdb is required")
   }
-  if (!file.exists(args$mdb)) {
-    cli_abort("Access file not found: {args$mdb}")
-  }
-  if (!args$`dry-run`) {
-    if (!nzchar(args$`pg-db`))   cli_abort("--pg-db is required (or set PGDATABASE)")
-    if (!nzchar(args$`pg-user`)) cli_abort("--pg-user is required (or set PGUSER)")
-  }
+  validate_migration_args(args)
   args
 }
 
@@ -264,12 +273,14 @@ migrate_table <- function(access_con, pg_con, access_table, pg_schema,
 }
 
 # ---------------------------------------------------------------------------
-# Main
+# Migration run for a validated args list (same shape as parse_args()
+# returns). Shared by the CLI entry point (main(), below) and the Shiny
+# web UI in app.R. Progress/status is reported via cli_inform()/cli_warn(),
+# which callers can capture with withCallingHandlers() if they don't want
+# it printed straight to the console (see app.R).
 # ---------------------------------------------------------------------------
 
-main <- function() {
-  args <- parse_args_safely()
-
+run_migration <- function(args) {
   access_con <- connect_access(args$mdb, args$`odbc-driver`)
   on.exit(try(dbDisconnect(access_con), silent = TRUE), add = TRUE)
 
@@ -301,7 +312,7 @@ main <- function() {
 
   if (isTRUE(args$`dry-run`)) {
     cli_inform("Dry run only — no data written to PostgreSQL.")
-    return(invisible())
+    return(invisible(list(tables = tables_todo, summary_rows = NULL)))
   }
 
   pg_con <- connect_postgres(
@@ -334,8 +345,22 @@ main <- function() {
     r <- summary_rows[[t]]
     cli_li("{t} -> {r$table}: {r$status} ({r$rows} rows)")
   }
+
+  invisible(list(tables = tables_todo, summary_rows = summary_rows))
 }
 
-if (identical(environment(), globalenv()) || sys.nframe() == 0L) {
+# ---------------------------------------------------------------------------
+# Main (CLI entry point)
+# ---------------------------------------------------------------------------
+
+main <- function() {
+  args <- parse_args_safely()
+  invisible(run_migration(args))
+}
+
+# Only auto-run when executed directly (e.g. `Rscript migrate_access_to_postgres.R`).
+# sys.nframe() == 0 at top level of a script run this way; source()-ing this
+# file (e.g. from app.R) always adds at least one frame, so main() is skipped.
+if (sys.nframe() == 0L) {
   main()
 }

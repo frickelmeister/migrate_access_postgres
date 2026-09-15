@@ -440,8 +440,103 @@ both deliverables produced. Two caveats:
 
 ---
 
-## Files produced this session
+## Files produced in the first session (2026-08-22)
 
 - [`migrate_access_to_postgres.R`](migrate_access_to_postgres.R) — the migration script.
 - [`README.md`](README.md) — documentation for the script.
 - [`SESSION.md`](SESSION.md) — this file.
+
+---
+
+## Session: 2026-09-15
+
+### Turn 1
+
+**User:**
+
+> Please program a web UI for the migrate_access_to_postgres.R script which
+> prompts the user for
+> - path to the access database via a file selection dialog
+> - hostname, port, database, user, password and schema for the PostgreSQL
+>   database to which the access database should be migrated
+>
+> Update README.md and SESSION.md accordingly.
+
+**Assistant:**
+
+Added a [Shiny](https://shiny.posit.co/) web UI, [`app.R`](app.R), that
+reuses the existing migration logic rather than duplicating it:
+
+- Refactored `migrate_access_to_postgres.R`:
+  - Extracted the body of `main()` (everything after argument parsing) into
+    a new `run_migration(args)` function, so it can be called with an
+    in-memory args list instead of only via `parse_args()` from the
+    command line. `main()` now just parses CLI args and calls
+    `run_migration()`.
+  - Extracted the required-field checks out of `parse_args_safely()` into a
+    standalone `validate_migration_args(args)`, shared by the CLI and the
+    Shiny app, so both reject missing `--mdb`/`--pg-db`/`--pg-user` (unless
+    `--dry-run`) the same way.
+  - Tightened the auto-run guard at the bottom of the script from
+    `if (identical(environment(), globalenv()) || sys.nframe() == 0L)` to
+    just `if (sys.nframe() == 0L)`. The dropped half of the condition was
+    redundant for `Rscript` execution and actively wrong for `source()`ing
+    the file into the global environment (the default for `source()`),
+    which would otherwise re-run `main()` — exactly what `app.R` needed to
+    avoid when sourcing this file to reuse its functions.
+- Added `app.R`:
+  - `fileInput()` for the Access file — this is the browser's native file
+    picker, satisfying the "file selection dialog" requirement; on submit
+    the upload is copied to a temp path with the original `.mdb`/`.accdb`
+    extension restored (Shiny uploads land at a random extension-less temp
+    name otherwise).
+  - Form fields for PostgreSQL host, port, database, user, password
+    (masked), and schema, plus the same optional flags as the CLI
+    (`--dry-run`, `--overwrite`, `--batch-size`, `--tables`, `--exclude`,
+    `--odbc-driver`).
+  - A "Run migration" button that builds the same args list shape the CLI
+    script's `parse_args()` produces, validates it with
+    `validate_migration_args()`, then calls `run_migration()` inside
+    `shiny::withProgress()`. `withCallingHandlers()` captures the `cli`
+    package's message/warning conditions (which `run_migration()` already
+    emits via `cli_inform()`/`cli_warn()`/`cli_h1()`/`cli_li()`) into a log
+    panel instead of letting them print to the R console, and drives a
+    progress indicator; `tryCatch()` turns a hard failure
+    (`cli_abort()`/`stop()`) into a log entry instead of crashing the app.
+    A summary table (Access table → PostgreSQL table, status, row count) is
+    rendered from `run_migration()`'s return value once it finishes.
+
+Verified without a real Access file or PostgreSQL server (none available in
+this environment) by installing lightweight stub R packages for `odbc`,
+`RPostgres`, and `optparse` (which aren't installed here) into a scratch
+library, then:
+
+- Sourcing the refactored script directly and calling
+  `validate_migration_args()` with various inputs (missing file, missing
+  `--mdb`, missing `--pg-db`, dry-run bypass) to confirm the extracted
+  validation still behaves like the original inline checks, and confirming
+  `main()` no longer auto-runs on `source()`.
+- Building the `app.R` Shiny app object to confirm `ui`/`server` construct
+  without error.
+- Driving the real `server()` function with `shiny::testServer()` and
+  simulated inputs (a dummy uploaded file, connection fields, clicking
+  "Run"): confirmed the wrong-extension and missing-required-field guards
+  short-circuit before touching migration logic, and that a real
+  `run_migration()` call (which fails at the ODBC-connect step against the
+  stub driver, as expected without real drivers/a real Access file) has its
+  `cli_inform()` progress message and `cli_abort()` failure both correctly
+  captured into the on-page log instead of crashing the app.
+
+Updated `README.md` with a "Web UI (Shiny app)" section (how to install
+`shiny` and start the app, what the form fields do, and notes on file
+upload behavior and password handling) and a pointer to it from the top of
+the file; this file (`SESSION.md`) with this turn.
+
+### Files added/changed this session
+
+- [`app.R`](app.R) — new Shiny web UI.
+- [`migrate_access_to_postgres.R`](migrate_access_to_postgres.R) — refactored
+  to expose `run_migration()` and `validate_migration_args()` for reuse by
+  `app.R`, and fixed the `source()`-vs-`Rscript` auto-run guard.
+- [`README.md`](README.md) — documented the web UI.
+- [`SESSION.md`](SESSION.md) — this update.
