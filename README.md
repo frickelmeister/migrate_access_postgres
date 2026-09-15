@@ -57,29 +57,33 @@ install.packages("shiny")
   and its ODBC driver, registered with unixODBC.
 
   ```bash
-  # Debian/Ubuntu
-  sudo apt-get install mdbtools mdbtools-dev unixodbc unixodbc-dev
+  # Debian/Ubuntu — the ODBC driver itself (libmdbodbc.so) is packaged
+  # separately from the mdbtools CLI tools as odbc-mdbtools
+  sudo apt-get install mdbtools mdbtools-dev odbc-mdbtools unixodbc unixodbc-dev
 
   # macOS (Homebrew)
   brew install mdbtools unixodbc
   ```
 
-  Register the driver once (locate the actual `.so` with
-  `find / -name "libmdbodbc*"` if the path below doesn't match your system):
+  Current Debian/Ubuntu packages of mdbtools don't ship an
+  `/etc/mdbtools/odbcinst.ini` to register with (older versions did), so
+  register the driver manually instead. Locate the actual `.so` first if the
+  path below doesn't match your system (`dpkg -L odbc-mdbtools | grep so$` on
+  Debian/Ubuntu, or `find / -name "libmdbodbc*"` otherwise):
 
   ```bash
-  sudo odbcinst -i -d -f /etc/mdbtools/odbcinst.ini
-  ```
-
-  or add it manually to `/etc/odbcinst.ini`:
-
-  ```ini
+  cat <<'EOF' > /tmp/mdbtools-odbcinst.ini
   [MDBTools]
   Description = MDBTools ODBC Driver
   Driver      = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbc.so
   Setup       = /usr/lib/x86_64-linux-gnu/odbc/libmdbodbc.so
   FileUsage   = 1
+  EOF
+  sudo odbcinst -i -d -f /tmp/mdbtools-odbcinst.ini
+  rm /tmp/mdbtools-odbcinst.ini
   ```
+
+  (Equivalently, add the same `[MDBTools]` block by hand to `/etc/odbcinst.ini`.)
 
   Verify the driver is registered and can open the file:
 

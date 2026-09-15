@@ -21,16 +21,20 @@
 #   * Linux / macOS: install mdbtools and its ODBC driver, then register it
 #     with unixODBC.
 #
-#       # Debian/Ubuntu
-#       sudo apt-get install mdbtools mdbtools-dev unixodbc unixodbc-dev
+#       # Debian/Ubuntu - the ODBC driver (libmdbodbc.so) is packaged
+#       # separately from the mdbtools CLI tools as odbc-mdbtools
+#       sudo apt-get install mdbtools mdbtools-dev odbc-mdbtools unixodbc unixodbc-dev
 #
 #       # macOS (Homebrew)
 #       brew install mdbtools unixodbc
 #
-#     Register the driver once (find the actual .so path with
-#     `mdbtools-config --libs` or `find / -name "libmdbodbc*"`):
+#     Current Debian/Ubuntu packages don't ship an /etc/mdbtools/odbcinst.ini
+#     to register with (older versions did) - register manually instead.
+#     Find the actual .so path first if it doesn't match below
+#     (`dpkg -L odbc-mdbtools | grep so$` on Debian/Ubuntu, or
+#     `find / -name "libmdbodbc*"` otherwise):
 #
-#       sudo odbcinst -i -d -f /etc/mdbtools/odbcinst.ini
+#       sudo odbcinst -i -d -f /tmp/mdbtools-odbcinst.ini   # after writing that file, see README.md
 #
 #     or add manually to /etc/odbcinst.ini:
 #
